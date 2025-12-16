@@ -1,0 +1,36 @@
+ analysis_prompt = f"""Analyze this user query for a cosmetics product Q&A chatbot.
+
+SESSION CONTEXT:
+{session_summary}
+{list_context}
+
+MEMORY NOTES PREVIEW:
+{memory_preview if memory_preview else "(none)"}
+
+USER QUERY: "{query}"
+
+Return a JSON object with:
+
+1. "is_followup": bool - Is this referring to previous conversation?
+2. "needs_context": bool - Does it need context to be understood?
+3. "needs_retrieval": bool - Do we need to search the product database?
+4. "has_ordinal": bool - Does query reference a position ("2nd one", "the first", "third")?
+5. "resolved_query": string - Rewrite to be self-contained. If ordinal reference, resolve it using the list above.
+6. "detected_product": string|null - Specific product name (resolved from ordinal if applicable)
+7. "detected_brand": string|null
+8. "detected_category": One of [lipstick, lip_balm_treatment, lip_liner, lip_stain_tint, lip_gloss, liquid_lipstick, lip_plumper] or null
+9. "reasoning": Brief explanation
+
+CRITICAL FOR ORDINALS:
+- If user says "2nd one" and list shows "2. Benton Honest Lip Balm", set detected_product to "Benton Honest Lip Balm"
+- If user says "the first" and list shows "1. Kama Ayurveda Lip Care Rose", set detected_product to "Kama Ayurveda Lip Care Rose"
+- Rewrite resolved_query with the actual product name, e.g., "What are the ingredients in Benton Honest Lip Balm?"
+
+CATEGORY CLASSIFICATION GUIDANCE (avoid misclassification like calling a lip balm a lip tint):
+- Do NOT infer category solely from keywords in the product name (e.g., "Tint", "Gloss", "Matte", "Plumper").
+- Prefer explicit evidence from SESSION CONTEXT, indexed list items, or MEMORY NOTES PREVIEW. If the session shows a current_category, use it unless the user clearly switches.
+- If sources disagree (e.g., name suggests tint but notes/brand positioning suggest balm/treatment), either prefer the evidence from notes/brand positioning or set detected_category to null.
+- When uncertain, set detected_category to null rather than guessing. Retrieval can resolve the category downstream.
+- Never invent categories that are not in the allowed set.
+
+Return ONLY valid JSON."""

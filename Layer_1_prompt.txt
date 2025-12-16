@@ -1,0 +1,143 @@
+"""Analyze this user query for a beauty/cosmetics product Q&A chatbot.
+
+SESSION CONTEXT:
+{session_summary}
+
+CURRENT LIST (for ordinal resolution):
+{list_context}
+
+MEMORY NOTES PREVIEW:
+{memory_preview}
+
+USER QUERY: "{query}"
+
+Return a JSON object with these fields:
+
+{{
+  "query_domain": "product_specific" | "general_beauty" | "brand_only" | "off_topic",
+  "beauty_subtopic": "skincare" | "makeup" | "haircare" | "bath_body" | "ingredients" | "routines" | "tools_techniques" | null,
+  "is_followup": bool,
+  "needs_context": bool,
+  "needs_retrieval": bool,
+  "has_ordinal": bool,
+  "needs_clarification": bool,
+  "clarification_type": "skin_tone" | "skin_type" | "preference" | "budget" | "occasion" | null,
+  "resolved_query": string,
+  "detected_product": string | null,
+  "detected_brand": string | null,
+  "detected_category": string | null,
+  "reasoning": string
+}}
+
+═══════════════════════════════════════════════════════════════
+FIELD DEFINITIONS & RULES
+═══════════════════════════════════════════════════════════════
+
+1. "query_domain" - CRITICAL routing decision:
+   
+   • "product_specific" - User asks about a SPECIFIC product we may have data on
+     Examples: "Does MAC Ruby Woo transfer?", "Tell me about Lakme 9to5 primer"
+     → REQUIRES Pinecone retrieval
+   
+   • "general_beauty" - Beauty/skincare questions NOT requiring specific product data
+     Examples: "What does niacinamide do?", "How to prevent lipstick feathering?",
+               "Best foundation type for oily skin?", "AHA vs BHA difference?"
+     → NO retrieval needed, use general expertise
+   
+   • "brand_only" - Asks about a brand without naming specific product
+     Examples: "Is MAC worth it?", "How's Lakme quality?", "Sugar vs Maybelline?"
+     → NO retrieval, redirect to ask for specific product
+   
+   • "off_topic" - Not related to beauty/personal care at all
+     Examples: "What's the weather?", "Help me code", "Write a poem"
+     → NO retrieval, politely decline with redirect
+
+2. "beauty_subtopic" - Only if query_domain is "general_beauty":
+   • "skincare" - Moisturizers, serums, cleansers, sunscreen science
+   • "makeup" - Application techniques, color theory, product types
+   • "haircare" - Hair products, treatments, styling
+   • "bath_body" - Body care, fragrance, bath products
+   • "ingredients" - What ingredients do, safety, interactions
+   • "routines" - How to build routines, product layering
+   • "tools_techniques" - Brushes, sponges, application methods
+
+3. "needs_clarification" - TRUE if better answer possible with more info:
+   • Shade/color questions without knowing user's skin tone
+   • "Best X for me" without knowing skin type/concerns
+   • Occasion-specific questions without knowing the occasion
+   
+   "clarification_type" - What info would help:
+   • "skin_tone" - For shade matching, color recommendations
+   • "skin_type" - For formula recommendations (oily/dry/combo)
+   • "preference" - For finish/texture preferences
+   • "budget" - For price-sensitive recommendations
+   • "occasion" - For event-specific advice
+
+4. "detected_category" - ONLY these exact values or null:
+   LIPS:
+   • "lipstick"
+   • "liquid_lipstick"
+   • "lip_gloss"
+   • "lip_liner"
+   • "lip_balm_treatment"
+   • "lip_stain_tint"
+   • "lip_plumper"
+   • "lip_palette"
+   
+   FACE:
+   • "foundation"
+   • "concealer"
+   • "blush"
+   • "highlighter"
+   • "tinted_moisturiser"
+   • "makeup_removers"
+   
+   Rules:
+   - Do NOT infer from product name alone ("Tinted" doesn't mean lip_stain_tint)
+   - Prefer session context if user was already discussing a category
+   - When uncertain, set to null (retrieval will handle it)
+   - Never invent categories not in this list
+
+5. ORDINAL RESOLUTION - CRITICAL:
+   If user says positional reference, resolve using CURRENT LIST:
+   
+   User: "Tell me about the 2nd one"
+   List shows: 1. MAC Ruby Woo, 2. Lakme Forever Matte, 3. Sugar Matte
+   → detected_product: "Lakme Forever Matte"
+   → resolved_query: "Tell me about Lakme Forever Matte lipstick"
+   
+   Ordinal words: "first", "1st", "second", "2nd", "third", "last", "the one above"
+
+═══════════════════════════════════════════════════════════════
+CLASSIFICATION EXAMPLES
+═══════════════════════════════════════════════════════════════
+
+Query: "Does MAC Ruby Woo transfer?"
+→ {{"query_domain": "product_specific", "needs_retrieval": true, "detected_product": "MAC Ruby Woo", "detected_category": "lipstick"}}
+
+Query: "What's the difference between AHA and BHA?"
+→ {{"query_domain": "general_beauty", "beauty_subtopic": "ingredients", "needs_retrieval": false}}
+
+Query: "Best nude lipstick"
+→ {{"query_domain": "product_specific", "needs_retrieval": true, "needs_clarification": true, "clarification_type": "skin_tone"}}
+
+Query: "Is MAC worth the money?"
+→ {{"query_domain": "brand_only", "needs_retrieval": false, "detected_brand": "MAC"}}
+
+Query: "How to prevent foundation oxidizing in humidity?"
+→ {{"query_domain": "general_beauty", "beauty_subtopic": "makeup", "needs_retrieval": false}}
+
+Query: "What should I cook for dinner?"
+→ {{"query_domain": "off_topic", "needs_retrieval": false}}
+
+Query: "Tell me about the second one" (with list context)
+→ {{"query_domain": "product_specific", "has_ordinal": true, "detected_product": "[resolved from list]"}}
+
+Query: "Does it transfer?" (followup about MAC Ruby Woo)
+→ {{"query_domain": "product_specific", "is_followup": true, "detected_product": "MAC Ruby Woo"}}
+
+Query: "Which concealer for NC42 skin?"
+→ {{"query_domain": "product_specific", "needs_retrieval": true, "detected_category": "concealer"}}
+
+Return ONLY valid JSON, no markdown formatting."""
+

@@ -1,0 +1,79 @@
+Lipstick
+“Long-lasting matte lipstick suitable for deep skin tones with warm undertones”
+“Hydrating cream lipstick for dry lips that doesn’t crack”
+“Transfer-proof lipstick for all-day office wear”
+“Nude lipstick for Indian skin with peachy undertones”
+“Bold red lipstick that is smudge-resistant and vegan”
+Liquid Lipstick
+“Waterproof liquid lipstick that stays intact under a mask”
+“Non-drying liquid lipstick with a satin finish for dark skin”
+“Lightweight liquid lipstick for sensitive lips”
+“Long-wear liquid lipstick for bridal makeup”
+“Liquid lipstick that doesn’t bleed and works well with lip liners”
+Lip Gloss
+“High-shine lip gloss with no sticky feel”
+“Clear gloss with lip-plumping effect”
+“Gloss for medium skin tones with gold shimmer”
+“Hydrating gloss enriched with oils for chapped lips”
+“Gloss that won’t fade after drinking or eating”
+Lip Liner
+“Lip liner for overlining lips naturally”
+“Long-lasting lip liner in nude shades for brown skin”
+“Creamy lip liner that blends easily with matte lipsticks”
+“Smudge-proof lip liner for humid weather”
+“Lip liner pencil that sharpens easily and isn’t too waxy”
+Lip Balm & Treatment
+“SPF lip balm for everyday sun protection”
+“Repairing lip balm for extremely dry, cracked lips”
+“Tinted balm suitable for no-makeup looks”
+“Fragrance-free lip balm for sensitive skin”
+“Lip treatment with overnight hydration and anti-aging benefits”
+Lip Stain & Tint
+“Natural-looking lip tint that stains evenly”
+“Long-lasting lip stain for sweaty workouts”
+“Lip tint suitable for fair skin with cool undertones”
+“Water-based tint that doesn’t dry out lips”
+“Gradient lip stain for Korean makeup style”
+Lip Plumper
+“Lip plumper gloss with cinnamon or peppermint”
+“Non-burning gentle lip plumper for sensitive lips”
+“Plumping gloss with shimmer for evening wear”
+“Instant volume lip plumper with long-lasting effect”
+“Lip plumper that works under matte lipsticks”
+Lip Palette
+“Lip palette with multiple shades for professional makeup artists”
+“Creamy lip palette good for blending custom colors”
+“Palette with nudes, pinks, and reds for all skin tones”
+“Travel-friendly lip palette with brush included”
+“Lip palette with matte and glossy finishes mix”
+✨ Face Categories (Foundation, Concealer, Blush, Highlighter, Tinted Moisturiser)
+Foundation
+“Full-coverage foundation for oily skin that’s sweat-proof”
+“Foundation for dry skin with dewy finish and hydrating benefits”
+“Shade-inclusive foundation for deep skin tones”
+“Lightweight foundation suitable for acne-prone skin”
+“Foundation that doesn’t oxidize and lasts 12+ hours”
+Concealer
+“High-coverage concealer that hides dark circles without creasing”
+“Brightening concealer for medium skin with yellow undertones”
+“Hydrating concealer for mature skin with fine lines”
+“Spot-correcting concealer for acne marks”
+“Long-wear concealer suitable for humid climates”
+Blush
+“Cream blush for dry skin with a natural finish”
+“Powder blush for oily skin that stays all day”
+“Blush shade that suits olive skin tones”
+“Highly pigmented blush for deeper skin”
+“Long-lasting blush that blends smoothly over foundation”
+Highlighter
+“Subtle highlighter for daily wear with soft glow”
+“High-shine highlighter for glam looks”
+“Highlighter that suits medium-deep skin with golden undertones”
+“Cream highlighter for natural dewy finish”
+“Powder highlighter that doesn’t emphasize texture”
+Tinted Moisturiser
+“SPF tinted moisturiser with lightweight coverage”
+“Tinted moisturiser for oily skin with matte finish”
+“Hydrating tinted moisturiser for dry and sensitive skin”
+“Tinted formula matching warm-undertone fair skin”
+“No-pilling tinted moisturiser for layering under makeup”
