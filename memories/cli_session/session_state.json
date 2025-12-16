@@ -1,0 +1,57 @@
+{
+  "current_product": "MAC Ruby Woo",
+  "current_brand": "MAC",
+  "current_category": "lipstick",
+  "last_query": "What are the ingredients used in it?",
+  "last_answer_preview": "MAC Ruby Woo comes in different formulas, so the ingredient list varies slightly depending on which version you're using.\n\n**MACximal Silky Matte (the newer, more comfortable version):**\nOctyldodecano",
+  "last_list_file": null,
+  "turn_count": 8,
+  "conversation_history": [
+    {
+      "query": "Full-coverage foundation for oily skin that’s sweat-proof",
+      "topic": "foundation",
+      "turn": 1
+    },
+    {
+      "query": "What are the ingredients used in it?",
+      "topic": "foundation",
+      "turn": 2
+    },
+    {
+      "query": "Give me shade description of MAC Rubby Woo.",
+      "topic": "lipstick",
+      "product": "MAC Ruby Woo",
+      "turn": 3
+    },
+    {
+      "query": "What are the ingredients used in it?",
+      "topic": "lipstick",
+      "product": "MAC Ruby Woo",
+      "turn": 4
+    },
+    {
+      "query": "Can I use it for wedding purpose?",
+      "topic": "lipstick",
+      "product": "MAC Ruby Woo",
+      "turn": 5
+    },
+    {
+      "query": "Shade inside Essesence Stay 8H Waterproof Lipliner 07 Honest?",
+      "topic": "lip_liner",
+      "product": "Essence Stay 8H Waterproof Lipliner 07 Honest",
+      "turn": 6
+    },
+    {
+      "query": "What is the shade used in Mac Rubby Woo?",
+      "topic": "lipstick",
+      "product": "MAC Ruby Woo",
+      "turn": 7
+    },
+    {
+      "query": "What are the ingredients used in it?",
+      "topic": "lipstick",
+      "product": "MAC Ruby Woo",
+      "turn": 8
+    }
+  ]
+}
