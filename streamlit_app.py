@@ -7,6 +7,28 @@ from dotenv import load_dotenv
 # Load .env BEFORE importing modules that read environment at import time
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=False)
 
+# Map Streamlit Cloud secrets into environment vars (if provided) BEFORE imports that read os.getenv
+for key in (
+    "PINECONE_API_KEY",
+    "PINECONE_INDEX",
+    "PINECONE_INDEX_NAME",
+    "PINECONE_NAMESPACE",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "COHERE_API_KEY",
+    "OPENAI_EMBEDDING_MODEL",
+    "COHERE_RERANK_MODEL",
+    "MEMORY_SESSION_ID",
+):
+    try:
+        if key in st.secrets and not os.getenv(key):
+            val = st.secrets.get(key)
+            if val is not None:
+                os.environ[key] = str(val)
+    except Exception:
+        # Safe on local runs without st.secrets
+        pass
+
 # Local imports (now env vars are available)
 from product_tools_optimized import general_product_qna, SessionState
 
