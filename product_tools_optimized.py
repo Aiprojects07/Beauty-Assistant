@@ -34,8 +34,19 @@ _pc_namespace = os.getenv("PINECONE_NAMESPACE") or None
 _pc_dim_env = os.getenv("PINECONE_DIMENSION")
 _pc_expected_dim = int(_pc_dim_env) if _pc_dim_env and _pc_dim_env.isdigit() else None
 
-pc = Pinecone(api_key=_pc_api_key)
-index = pc.Index(_pc_index_name)
+def get_pinecone_index():
+    """Lazy initializer for Pinecone index (avoids import-time failures).
+
+    Reads PINECONE_API_KEY and PINECONE_INDEX (or PINECONE_INDEX_NAME) from env.
+    """
+    api_key = os.getenv("PINECONE_API_KEY")
+    idx_name = os.getenv("PINECONE_INDEX") or os.getenv("PINECONE_INDEX_NAME")
+    if not api_key or not idx_name:
+        raise RuntimeError(
+            "Pinecone is not configured. Set PINECONE_API_KEY and PINECONE_INDEX (or PINECONE_INDEX_NAME)."
+        )
+    pc = Pinecone(api_key=api_key)
+    return pc.Index(idx_name)
 
 _anthropic_client: Optional[Anthropic] = None
 try:
