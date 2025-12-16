@@ -877,7 +877,8 @@ def search_pinecone(query: str, top_k: int = 30, category: Optional[str] = None)
     #     }
     
     try:
-        results = index.query(**query_params)
+        idx = get_pinecone_index()
+        results = idx.query(**query_params)
         matches = getattr(results, "matches", []) or results.get("matches", [])
         return [
             {
