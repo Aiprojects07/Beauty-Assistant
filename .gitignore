@@ -26,3 +26,7 @@ memories/
 # Streamlit
 .streamlit/**/uploaded_files/
 
+memories/
+secrets.toml
+memories/
+secrets.toml
