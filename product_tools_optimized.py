@@ -331,16 +331,6 @@ class SessionState:
         }
         self.save()
     
-    def get_list_index(self) -> Optional[Dict]:
-        """Read the LLM-managed list index file."""
-        list_path = self.memory_dir / LIST_INDEX_FILE
-        if list_path.exists():
-            try:
-                return json.loads(list_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, IOError):
-                pass
-        return None
-    
     def get_memory_files_content(self) -> str:
         """Read all memory .md files for pre-injection into system prompt."""
         contents = []
@@ -670,6 +660,67 @@ class MemoryToolHandler:
 # Optimized Agentic Loop (Reduced Iterations)
 # =============================================================================
 
+# Meta markers to filter from streamed text
+META_MARKERS = (
+    "let me update the memory",
+    "updating the memory",
+    "let me check the memory",
+    "checking memory",
+    "i will update the memory",
+    "i'll update the memory",
+    "memory is already up to date",
+    "no additional tool calls needed",
+    "no tool calls needed",
+    "tools are not required",
+    "i've saved",
+    "i've updated",
+    "memory has been updated",
+    "saved to memory",
+)
+
+def is_meta_only_text(text: str, threshold: int = 160) -> bool:
+    """Return True if the text appears to be only meta/housekeeping content."""
+    if not text:
+        return True
+    lower = text.lower().strip()
+    if len(text) <= threshold and any(m in lower for m in META_MARKERS):
+        return True
+    return False
+
+def extract_meaningful_text(text: str) -> str:
+    """Remove meta-markers from text and return the meaningful parts only."""
+    if not text:
+        return ""
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    meaningful = []
+    for sentence in sentences:
+        lower = sentence.lower()
+        if not any(m in lower for m in META_MARKERS):
+            meaningful.append(sentence)
+    return " ".join(meaningful).strip()
+
+# Memory enforcement additions (ported from run_with_memory_tool_fixed.py)
+MEMORY_SAVE_ENFORCEMENT_PROMPT = """
+CRITICAL MEMORY RULES:
+1. You MUST save important information to memory BEFORE giving your final answer
+2. Use exactly ONE "create" command to save a summary
+3. Structure:
+   - First: Call memory tool with command="create"
+   - Then: Give your answer (no meta-text about saving)
+4. NEVER say "let me update memory" or similar - just do it silently
+5. Your response should ONLY contain the user-facing answer, not tool status
+"""
+
+def get_enhanced_system_prompt(base_prompt: str, turn_count: int) -> str:
+    """Prepend memory enforcement instructions to the base system prompt."""
+    return f"""{base_prompt}
+
+{MEMORY_SAVE_ENFORCEMENT_PROMPT}
+
+Current turn: {turn_count}
+"""
+
 def run_with_memory_tool(
     client: Anthropic,
     model: str,
@@ -681,22 +732,24 @@ def run_with_memory_tool(
     max_tokens: int = 10000,
     stream_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
-    """Optimized agentic loop with reduced iterations."""
-    
+    """Optimized agentic loop with better text accumulation and filtering."""
+
     beta_iface = getattr(client, "beta", None)
     if not beta_iface or not getattr(beta_iface, "messages", None):
         raise RuntimeError("Anthropic beta API not available")
-    
+
     system_blocks = [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
     messages = [{"role": "user", "content": user_message}]
-    last_text = ""
-    last_meaningful_text = ""
-    
+
+    # Track meaningful text across all iterations
+    all_meaningful_texts: List[str] = []
+    memory_saved = False
+    last_step_text = ""
+
     total_start = time.perf_counter()
-    
+
     for iter_idx in range(max_iterations):
         api_start = time.perf_counter()
-        # Streaming response: print text chunks as they arrive
         with beta_iface.messages.stream(
             model=model,
             max_tokens=max_tokens,
@@ -707,73 +760,40 @@ def run_with_memory_tool(
             betas=["context-management-2025-06-27"],
         ) as stream:
             streamed_text_parts = []
-            # Buffer to suppress meta-only prefaces from reaching UI
             preview_buffer = []
             printing_enabled = False
-            meta_markers = (
-                "let me update the memory",
-                "updating the memory",
-                "let me check the memory",
-                "checking memory",
-                "i will update the memory",
-                "i'll update the memory",
-                "memory is already up to date",
-                "no additional tool calls needed",
-                "no tool calls needed",
-                "tools are not required",
-            )
+
             for chunk in stream.text_stream:
-                # Collect streamed assistant text incrementally
                 streamed_text_parts.append(chunk)
                 preview_buffer.append(chunk)
-                # Forward the chunk to optional UI callback (UI/CLI handles display)
+
                 try:
                     if stream_callback and isinstance(chunk, str) and chunk:
                         if not printing_enabled:
-                            # Decide whether the buffered text is meaningful enough to show
                             buf_txt = "".join(preview_buffer).strip()
                             lower = buf_txt.lower()
-                            if buf_txt and (len(buf_txt) > 160 or not any(m in lower for m in meta_markers)):
-                                # Flush buffer once and enable streaming
+                            if buf_txt and (len(buf_txt) > 160 or not any(m in lower for m in META_MARKERS)):
                                 stream_callback(buf_txt)
                                 printing_enabled = True
                                 preview_buffer.clear()
                         else:
                             stream_callback(chunk)
                 except Exception:
-                    # Never let UI callback failures break the agent loop
                     pass
-            # finalize full message for tool blocks
+
             response = stream.get_final_message()
         api_elapsed = time.perf_counter() - api_start
-        
-        # Capture streamed text as the assistant text for this step
-        if streamed_text_parts:
-            current_text = "".join(streamed_text_parts).strip()
-            if current_text:
-                last_text = current_text
-                lower = current_text.lower()
-                meta_markers = (
-                    "let me update the memory",
-                    "updating the memory",
-                    "let me check the memory",
-                    "checking memory",
-                    "i will update the memory",
-                    "i'll update the memory",
-                    "memory is already up to date",
-                    "no additional tool calls needed",
-                    "no tool calls needed",
-                    "tools are not required",
-                )
-                if not any(m in lower for m in meta_markers) or len(current_text) > 160:
-                    last_meaningful_text = current_text
-                else:
-                    print("\n[DEBUG] Ignoring meta-only assistant text for final output:", repr(current_text[:120]))
-        
+
+        # Consider this step's text
+        step_text = "".join(streamed_text_parts).strip()
+        last_step_text = step_text
+        if step_text and not is_meta_only_text(step_text):
+            all_meaningful_texts.append(step_text)
+
+        # Collect tool uses
         tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
-        
+
         print(f"[AGENT] Step {iter_idx + 1}: API={api_elapsed:.2f}s, tools={len(tool_uses)}")
-        # DEBUG: print compact info about tool uses
         if tool_uses:
             try:
                 for idx, tb in enumerate(tool_uses, start=1):
@@ -784,13 +804,23 @@ def run_with_memory_tool(
                     print(f"  - ToolUse[{idx}] id={tid} name={tname} command={tcmd}")
             except Exception:
                 pass
-        
+
         if not tool_uses:
             print(f"[TIMING] Agent total: {time.perf_counter() - total_start:.2f}s")
-            # Prefer the last meaningful text over a meta-only preface
-            return (last_meaningful_text or last_text or "")
-        
-        # Build assistant content
+            print(f"[DEBUG] Memory saved: {memory_saved}")
+            # Prefer the first meaningful block, then append only distinct additional content
+            if all_meaningful_texts:
+                final_text = all_meaningful_texts[0]
+                for additional in all_meaningful_texts[1:]:
+                    if additional not in final_text and len(additional) > 100:
+                        first_sentences = additional.split('. ')[:2]
+                        if not any((s in final_text) for s in first_sentences if len(s) > 20):
+                            final_text += "\n\n" + additional
+            else:
+                final_text = extract_meaningful_text(last_step_text)
+            return final_text.strip()
+
+        # Build assistant content to acknowledge tool calls
         assistant_content = []
         for block in response.content:
             btype = getattr(block, "type", None)
@@ -804,23 +834,35 @@ def run_with_memory_tool(
                     "input": getattr(block, "input", {})
                 })
         messages.append({"role": "assistant", "content": assistant_content})
-        
-        # Execute tools
+
+        # Execute tools and send back results
         tool_results = []
         for tb in tool_uses:
             tool_input = getattr(tb, "input", {})
             cmd = tool_input.get("command", "")
             result = memory_handler.handle(tool_input)
             print(f"  - Tool: {cmd} -> {result[:100]}...")
+            if cmd == "create" and isinstance(result, str) and result.startswith("Created:"):
+                memory_saved = True
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": getattr(tb, "id", ""),
                 "content": result
             })
         messages.append({"role": "user", "content": tool_results})
-    
+
     print(f"[TIMING] Agent total: {time.perf_counter() - total_start:.2f}s (max iterations)")
-    return last_text or "Max iterations reached."
+    if all_meaningful_texts:
+        final_text = all_meaningful_texts[0]
+        for additional in all_meaningful_texts[1:]:
+            if additional not in final_text and len(additional) > 100:
+                first_sentences = additional.split('. ')[:2]
+                if not any((s in final_text) for s in first_sentences if len(s) > 20):
+                    final_text += "\n\n" + additional
+        return final_text.strip()
+    # Fallback if nothing was considered meaningful
+    fallback = extract_meaningful_text(last_step_text)
+    return fallback or "Max iterations reached."
 
 
 # =============================================================================
@@ -1038,7 +1080,8 @@ def general_product_qna(
         raise RuntimeError(f"Failed to load Layer_2_prompt.txt: {_e}")
     
     turn_for_filename = session.load().get("turn_count", 0) + 1
-    system_prompt = f"""{base_prompt}
+    base_with_enforcement = get_enhanced_system_prompt(base_prompt, turn_for_filename)
+    system_prompt = f"""{base_with_enforcement}
 
 EFFICIENCY RULES (CRITICAL):
 1. Do NOT say "Let me check memory" or announce tool usage
@@ -1126,7 +1169,7 @@ Remember: Start with your answer immediately. Maximum 2 tool calls."""
         user_message=user_msg,
         memory_handler=memory_handler,
         temperature=0.2,
-        max_tokens=8000,
+        max_tokens=10000,
         stream_callback=stream_callback,
     )
     
