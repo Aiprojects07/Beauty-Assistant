@@ -16,9 +16,7 @@ for key in (
     "PINECONE_NAMESPACE",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
-    "COHERE_API_KEY",
     "OPENAI_EMBEDDING_MODEL",
-    "COHERE_RERANK_MODEL",
     "MEMORY_SESSION_ID",
 ):
     try:
@@ -31,7 +29,7 @@ for key in (
         pass
 
 # Local imports (now env vars are available)
-from product_tools_optimized import general_product_qna, SessionState
+from product_tools_optimized_updated import general_product_qna, SessionState
 
 APP_TITLE = "Beauty Assistant"
 
