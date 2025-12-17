@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import uuid
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -38,15 +39,14 @@ APP_TITLE = "Beauty Assistant"
 st.set_page_config(page_title=APP_TITLE, page_icon="🤖", layout="wide")
 st.title(APP_TITLE)
 
-# Session ID selection
+# Generate unique session ID per user (first load)
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = f"user_{uuid.uuid4().hex[:8]}"
+session_id = st.session_state["session_id"]
+
 with st.sidebar:
     st.header("Session")
-    default_session = os.getenv("MEMORY_SESSION_ID", "cli_session")
-    session_id = st.text_input("Session ID", value=default_session)
-    if "session_id" not in st.session_state:
-        st.session_state["session_id"] = session_id
-    else:
-        st.session_state["session_id"] = session_id
+    st.caption(f"Your session: `{session_id}`")
 
     sess = SessionState(session_id)
 
@@ -69,6 +69,7 @@ with st.sidebar:
             st.session_state["messages"] = []
             st.session_state["context_summary"] = "(cleared)"
             st.success("Session and memory cleared.")
+            st.rerun()
 
     # Context display
     st.divider()
@@ -118,7 +119,7 @@ if user_query and user_query.strip():
     try:
         final_answer = general_product_qna(
             query=user_text,
-            session_id=st.session_state["session_id"],
+            session_id=session_id,
             stream_callback=_on_chunk,
         )
     except Exception as e:

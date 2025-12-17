@@ -1,4 +1,4 @@
-"""Analyze this user query for a beauty/cosmetics product Q&A chatbot.
+Analyze this user query for a beauty/cosmetics product Q&A chatbot.
 
 SESSION CONTEXT:
 {session_summary}
@@ -14,11 +14,17 @@ USER QUERY: "{query}"
 Return a JSON object with these fields:
 
 {{
-  "query_domain": "product_specific" | "general_beauty" | "brand_only" | "off_topic",
-  "beauty_subtopic": "skincare" | "makeup" | "haircare" | "bath_body" | "ingredients" | "routines" | "tools_techniques" | null,
+  "intent": "recommend" | "info_specific" | "compare" | "explain" | "off_topic",
+  "requires_retrieval": bool,
+  "answer_in_memory": bool,
+  "memory_answer": string | null,
+  "requires_web_validation": bool,
+  "is_brand_query": bool,
+  "is_ingredient_query": bool,
+  "is_price_query": bool,
+  "is_negative_query": bool,
+  "exclude_attributes": [string] | null,
   "is_followup": bool,
-  "needs_context": bool,
-  "needs_retrieval": bool,
   "has_ordinal": bool,
   "needs_clarification": bool,
   "clarification_type": "skin_tone" | "skin_type" | "preference" | "budget" | "occasion" | null,
@@ -26,118 +32,270 @@ Return a JSON object with these fields:
   "detected_product": string | null,
   "detected_brand": string | null,
   "detected_category": string | null,
+  "detected_ingredients": [string] | null,
+  "comparison_entities": [string, string] | null,
+  "comparison_attribute": string | null,
   "reasoning": string
 }}
 
-═══════════════════════════════════════════════════════════════
-FIELD DEFINITIONS & RULES
-═══════════════════════════════════════════════════════════════
+===============================================================================
+INTENT DEFINITIONS (MUTUALLY EXCLUSIVE)
+===============================================================================
 
-1. "query_domain" - CRITICAL routing decision:
-   
-   • "product_specific" - User asks about a SPECIFIC product we may have data on
-     Examples: "Does MAC Ruby Woo transfer?", "Tell me about Lakme 9to5 primer"
-     → REQUIRES Pinecone retrieval
-   
-   • "general_beauty" - Beauty/skincare questions NOT requiring specific product data
-     Examples: "What does niacinamide do?", "How to prevent lipstick feathering?",
-               "Best foundation type for oily skin?", "AHA vs BHA difference?"
-     → NO retrieval needed, use general expertise
-   
-   • "brand_only" - Asks about a brand without naming specific product
-     Examples: "Is MAC worth it?", "How's Lakme quality?", "Sugar vs Maybelline?"
-     → NO retrieval, redirect to ask for specific product
-   
-   • "off_topic" - Not related to beauty/personal care at all
-     Examples: "What's the weather?", "Help me code", "Write a poem"
-     → NO retrieval, politely decline with redirect
+"intent" - The PRIMARY purpose of the query:
 
-2. "beauty_subtopic" - Only if query_domain is "general_beauty":
-   • "skincare" - Moisturizers, serums, cleansers, sunscreen science
-   • "makeup" - Application techniques, color theory, product types
-   • "haircare" - Hair products, treatments, styling
-   • "bath_body" - Body care, fragrance, bath products
-   • "ingredients" - What ingredients do, safety, interactions
-   • "routines" - How to build routines, product layering
-   • "tools_techniques" - Brushes, sponges, application methods
+* "recommend" - User wants product suggestions without naming specific products
+  Examples: "Best long-lasting lipstick", "Recommend foundation for oily skin",
+            "What's good for dry lips?", "Lipstick like MAC Ruby Woo but cheaper"
+  -> requires_retrieval: true (unless answer_in_memory)
+  -> requires_web_validation: false (web validation disabled)
 
-3. "needs_clarification" - TRUE if better answer possible with more info:
-   • Shade/color questions without knowing user's skin tone
-   • "Best X for me" without knowing skin type/concerns
-   • Occasion-specific questions without knowing the occasion
-   
-   "clarification_type" - What info would help:
-   • "skin_tone" - For shade matching, color recommendations
-   • "skin_type" - For formula recommendations (oily/dry/combo)
-   • "preference" - For finish/texture preferences
-   • "budget" - For price-sensitive recommendations
-   • "occasion" - For event-specific advice
+* "info_specific" - User asks about a NAMED product or follows up on one
+  Examples: "Does MAC Ruby Woo transfer?", "Tell me about Focallure NU03",
+            "Does it last long?" (followup), "What about the second one?" (ordinal)
+  -> requires_retrieval: true (unless answer_in_memory)
+  -> requires_web_validation: false
 
-4. "detected_category" - ONLY these exact values or null:
-   LIPS:
-   • "lipstick"
-   • "liquid_lipstick"
-   • "lip_gloss"
-   • "lip_liner"
-   • "lip_balm_treatment"
-   • "lip_stain_tint"
-   • "lip_plumper"
-   • "lip_palette"
-   
-   FACE:
-   • "foundation"
-   • "concealer"
-   • "blush"
-   • "highlighter"
-   • "tinted_moisturiser"
-   • "makeup_removers"
-   
-   Rules:
-   - Do NOT infer from product name alone ("Tinted" doesn't mean lip_stain_tint)
-   - Prefer session context if user was already discussing a category
-   - When uncertain, set to null (retrieval will handle it)
-   - Never invent categories not in this list
+* "compare" - User wants to compare TWO OR MORE specific products
+  Examples: "MAC Ruby Woo vs Maybelline Superstay", "Compare Lakme and L'Oreal foundation"
+  -> requires_retrieval: true (unless answer_in_memory)
+  -> requires_web_validation: false
+  -> MUST return exactly two entries in "comparison_entities" (e.g., ["MAC Ruby Woo", "Maybelline SuperStay"]).
+  -> Optionally set "comparison_attribute" (e.g., "longevity", "transfer-proof", "finish", "dry lips").
+  -> IMPORTANT: Downstream will NOT auto-parse entities; if not provided, compare flow will not trigger.
 
-5. ORDINAL RESOLUTION - CRITICAL:
-   If user says positional reference, resolve using CURRENT LIST:
-   
-   User: "Tell me about the 2nd one"
-   List shows: 1. MAC Ruby Woo, 2. Lakme Forever Matte, 3. Sugar Matte
-   → detected_product: "Lakme Forever Matte"
-   → resolved_query: "Tell me about Lakme Forever Matte lipstick"
-   
-   Ordinal words: "first", "1st", "second", "2nd", "third", "last", "the one above"
+* "explain" - General beauty/skincare knowledge NOT requiring product data
+  Examples: "What does niacinamide do?", "How to prevent lipstick feathering?",
+            "Difference between matte and satin finish?", "How to apply foundation?"
+  -> requires_retrieval: false
+  -> requires_web_validation: false
 
-═══════════════════════════════════════════════════════════════
-CLASSIFICATION EXAMPLES
-═══════════════════════════════════════════════════════════════
+* "off_topic" - Not related to beauty/personal care at all
+  Examples: "What's the weather?", "Help me code", "Write a poem"
+  -> requires_retrieval: false
+  -> requires_web_validation: false
+
+===============================================================================
+MEMORY-BASED ANSWERING (CRITICAL FOR PERFORMANCE)
+===============================================================================
+
+Before setting requires_retrieval=true, CHECK the MEMORY NOTES PREVIEW above.
+
+"answer_in_memory": true when the MEMORY NOTES PREVIEW contains enough information
+to answer the user's question WITHOUT needing new Pinecone retrieval.
+
+"memory_answer": If answer_in_memory=true, YOU (Layer 1) must GENERATE a complete,
+helpful answer based on the memory content. This is NOT just copying memory text -
+you are acting as the beauty expert and crafting a proper response.
+
+IMPORTANT: The memory_answer should be:
+- Written in the sassy beauty expert voice
+- A complete, standalone response
+- Based on facts from memory but rephrased naturally
+- Include reasoning (explain WHY, not just facts)
+
+WHEN TO SET answer_in_memory=true:
+- User asks about a product that was JUST discussed in memory notes
+- User asks a followup question whose answer is clearly stated in memory
+- User asks about longevity/transfer/comfort of a product already in memory
+- User asks "what about X" when X is already covered in memory notes
+
+WHEN TO SET answer_in_memory=false:
+- The specific information requested is NOT in memory notes
+- User is asking about a NEW product not in memory
+- User wants NEW recommendations (not followup on existing)
+- Memory notes don't have enough detail to fully answer
+
+EXAMPLES:
+
+Memory contains: "Inglot HD Lip Tint Matte... lasts 5-8+ hours, transfer-resistant"
+Query: "What's the longevity of Inglot lipstick?"
+-> answer_in_memory: true
+-> memory_answer: "Inglot HD Lip Tint Matte is a longevity champion at 5-8+ hours depending on the shade. That's exceptional for a lip tint - you can get through an entire workday, multiple coffees, and even lunch without needing a touch-up. The formula is genuinely transfer-resistant too, so you won't be leaving marks on your cup or documents. It's the kind of product you put on in the morning and forget about."
+-> requires_retrieval: false
+
+(Note: The memory_answer is GENERATED by the LLM based on memory facts, written in beauty expert voice with reasoning - NOT just copied from memory)
+
+Memory contains: "Colorbar vs Inglot comparison with office suitability notes"
+Query: "Which one is better for office?"
+-> answer_in_memory: true  
+-> memory_answer: [LLM generates a complete answer using comparison data from memory]
+-> requires_retrieval: false
+
+Memory contains: "Colorbar vs Inglot comparison"  
+Query: "What about MAC Ruby Woo?"
+-> answer_in_memory: false (MAC not in memory - need new retrieval)
+-> memory_answer: null
+-> requires_retrieval: true
+
+CRITICAL: When answer_in_memory=true, the system returns YOUR generated memory_answer
+directly to the user. Make it sound like the beauty expert, not like reading a database!
+
+PERSONALITY FOR memory_answer:
+- Sassy, knowledgeable beauty expert with 15 years experience
+- Explain WHY things work, not just facts
+- Use natural, conversational language
+- Include practical advice when relevant
+- Avoid: "Based on our previous discussion" or "According to memory"
+- Sound like you're chatting with a friend, not reading notes
+
+===============================================================================
+RECOMMENDATION COUNT POLICY
+===============================================================================
+
+- When intent is "recommend", downstream responses must suggest exactly 5 products.
+- If fewer than 5 relevant matches are available, return all available and state the shortfall explicitly.
+
+===============================================================================
+SPECIAL QUERY FLAGS
+===============================================================================
+
+"is_brand_query": true when user asks about a BRAND without specific product
+  Examples: "Is MAC worth it?", "How's Lakme quality?", "Tell me about Sugar Cosmetics"
+  -> Still set intent based on what they want (usually "recommend" or "explain")
+  -> Use detected_brand to filter/search
+  -> Web search can provide brand reputation if we carry the brand
+
+"is_ingredient_query": true when query focuses on ingredients
+  Examples: "Which lipstick has hyaluronic acid?", "Foundations with SPF",
+            "Lipsticks without parabens"
+  -> Set detected_ingredients: ["hyaluronic acid"] or ["SPF"] etc.
+  -> Our metadata has ingredient lists (in product detailed_data)
+
+"is_price_query": true when query is primarily about price
+  Examples: "Cheapest lipstick", "Lipstick under 500", "Most affordable foundation"
+  -> IMPORTANT: We don't currently have price data in our database
+  -> Set this flag so Layer 2 can inform user appropriately
+
+"is_negative_query": true when user wants to EXCLUDE something
+  Examples: "Foundation WITHOUT SPF", "Lipsticks that DON'T transfer",
+            "Non-drying lip products"
+  -> Set exclude_attributes: ["SPF"] or ["transfer"] or ["drying"]
+  -> This helps filter results
+
+===============================================================================
+CLARIFICATION RULES (IMPORTANT - FOLLOW PRIORITY ORDER)
+===============================================================================
+
+PRIORITY ORDER:
+1. ALWAYS attempt to answer first with available information
+2. Only set needs_clarification=true if answer would be SIGNIFICANTLY better
+3. NEVER ask more than ONE clarifying question per response
+4. If in doubt, DON'T ask for clarification - give best-effort answer
+
+Set needs_clarification=true ONLY for:
+* Shade/color recommendations without knowing skin tone -> "skin_tone"
+* Formula recommendations without knowing skin type -> "skin_type"  
+* "Best for me" questions without context -> "preference"
+* Price-sensitive queries (though we don't have price data) -> "budget"
+* Event-specific needs without knowing occasion -> "occasion"
+
+Examples:
+- "Best nude lipstick" -> needs_clarification: true, clarification_type: "skin_tone"
+  (nude shades vary dramatically by skin tone)
+- "Best long-lasting lipstick" -> needs_clarification: false
+  (longevity is objective, doesn't depend on user attributes)
+- "Good foundation" -> needs_clarification: true, clarification_type: "skin_type"
+  (formula needs vary by skin type)
+- "Best nude lipstick for fair skin" -> needs_clarification: false
+  (skin tone already provided)
+
+===============================================================================
+CATEGORY DETECTION
+===============================================================================
+
+"detected_category" - ONLY these exact values or null:
+
+LIPS:
+* "lipstick"
+* "liquid_lipstick"  
+* "lip_gloss"
+* "lip_liner"
+* "lip_balm_treatment"
+* "lip_stain_tint"
+* "lip_plumper"
+* "lip_palette"
+
+FACE:
+* "foundation"
+* "concealer"
+* "blush"
+* "highlighter"
+* "tinted_moisturiser"
+* "makeup_removers"
+
+Rules:
+- Infer from context when possible
+- If uncertain, set to null (retrieval will handle it)
+- Never invent categories not in this list
+
+===============================================================================
+ORDINAL & FOLLOWUP RESOLUTION
+===============================================================================
+
+If user references previous context:
+
+ORDINAL: "Tell me about the 2nd one", "first option", "last one"
+-> has_ordinal: true
+-> Resolve using CURRENT LIST to get actual product name
+-> Put resolved name in detected_product and resolved_query
+
+FOLLOWUP: "Does it transfer?", "What about humidity?", "And the ingredients?"
+-> is_followup: true
+-> Resolve "it" from session context (current_product)
+-> Put resolved product in detected_product and resolved_query
+
+===============================================================================
+EXAMPLES
+===============================================================================
+
+Query: "Best long-lasting lipstick"
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "detected_category": "lipstick", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Best long-lasting lipstick", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "User wants product suggestions for long-lasting lipstick; web validation is disabled"}}
 
 Query: "Does MAC Ruby Woo transfer?"
-→ {{"query_domain": "product_specific", "needs_retrieval": true, "detected_product": "MAC Ruby Woo", "detected_category": "lipstick"}}
-
-Query: "What's the difference between AHA and BHA?"
-→ {{"query_domain": "general_beauty", "beauty_subtopic": "ingredients", "needs_retrieval": false}}
-
-Query: "Best nude lipstick"
-→ {{"query_domain": "product_specific", "needs_retrieval": true, "needs_clarification": true, "clarification_type": "skin_tone"}}
+-> {{"intent": "info_specific", "requires_retrieval": true, "requires_web_validation": false, "detected_product": "MAC Ruby Woo", "detected_brand": "MAC", "detected_category": "lipstick", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Does MAC Ruby Woo transfer?", "detected_ingredients": null, "reasoning": "Specific question about a named product"}}
 
 Query: "Is MAC worth the money?"
-→ {{"query_domain": "brand_only", "needs_retrieval": false, "detected_brand": "MAC"}}
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "is_brand_query": true, "detected_brand": "MAC", "detected_category": null, "needs_clarification": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Is MAC worth the money?", "detected_product": null, "detected_ingredients": null, "reasoning": "Brand-level question; rely on our tested products only (web validation disabled)"}}
 
-Query: "How to prevent foundation oxidizing in humidity?"
-→ {{"query_domain": "general_beauty", "beauty_subtopic": "makeup", "needs_retrieval": false}}
+Query: "Which lipstick has hyaluronic acid?"
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "is_ingredient_query": true, "detected_ingredients": ["hyaluronic acid"], "detected_category": "lipstick", "needs_clarification": false, "is_brand_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Which lipstick has hyaluronic acid?", "detected_product": null, "detected_brand": null, "reasoning": "Ingredient-focused query, search metadata for hyaluronic acid"}}
 
-Query: "What should I cook for dinner?"
-→ {{"query_domain": "off_topic", "needs_retrieval": false}}
+Query: "Cheapest foundation"
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "is_price_query": true, "detected_category": "foundation", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Cheapest foundation", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "Price query - we don't have price data, Layer 2 should handle gracefully"}}
 
-Query: "Tell me about the second one" (with list context)
-→ {{"query_domain": "product_specific", "has_ordinal": true, "detected_product": "[resolved from list]"}}
+Query: "Foundation WITHOUT SPF"
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "is_negative_query": true, "exclude_attributes": ["SPF"], "detected_category": "foundation", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_followup": false, "has_ordinal": false, "resolved_query": "Foundation WITHOUT SPF", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "Negative query - exclude SPF; rely on our tested data (web validation disabled)"}}
 
-Query: "Does it transfer?" (followup about MAC Ruby Woo)
-→ {{"query_domain": "product_specific", "is_followup": true, "detected_product": "MAC Ruby Woo"}}
+Query: "MAC Ruby Woo vs Maybelline Superstay"
+-> {{"intent": "compare", "requires_retrieval": true, "requires_web_validation": false, "detected_category": "lipstick", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "MAC Ruby Woo vs Maybelline Superstay", "comparison_entities": ["MAC Ruby Woo", "Maybelline SuperStay"], "comparison_attribute": null, "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "Comparison between two specific products; entities extracted"}}
 
-Query: "Which concealer for NC42 skin?"
-→ {{"query_domain": "product_specific", "needs_retrieval": true, "detected_category": "concealer"}}
+Query: "What does matte finish mean?"
+-> {{"intent": "explain", "requires_retrieval": false, "requires_web_validation": false, "detected_category": null, "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "What does matte finish mean?", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "General beauty knowledge question, no product retrieval needed"}}
 
-Return ONLY valid JSON, no markdown formatting."""
+Query: "Best nude lipstick"
+-> {{"intent": "recommend", "requires_retrieval": true, "requires_web_validation": false, "detected_category": "lipstick", "needs_clarification": true, "clarification_type": "skin_tone", "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "Best nude lipstick", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "Nude shade recommendations vary by skin tone; web validation disabled"}}
 
+Query: "Does it transfer?" (when current_product is "MAC Ruby Woo")
+-> {{"intent": "info_specific", "requires_retrieval": true, "answer_in_memory": false, "memory_answer": null, "requires_web_validation": false, "is_followup": true, "detected_product": "MAC Ruby Woo", "detected_brand": "MAC", "detected_category": "lipstick", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "has_ordinal": false, "resolved_query": "Does MAC Ruby Woo transfer?", "detected_ingredients": null, "reasoning": "Followup question resolved from session context"}}
+
+Query: "What's the longevity?" (when memory contains "Inglot HD Lip Tint Matte lasts 5-8+ hours")
+-> {{"intent": "info_specific", "requires_retrieval": false, "answer_in_memory": true, "memory_answer": "Inglot HD Lip Tint Matte is a longevity champion - we're talking 5-8+ hours depending on the shade. That's exceptional for a lip tint. You can power through your entire workday, multiple chai breaks, and even lunch without needing a mirror. The formula genuinely stays put, which is why it's my go-to recommendation for anyone who hates touch-ups.", "requires_web_validation": false, "is_followup": true, "detected_product": "Inglot HD Lip Tint Matte", "detected_brand": "Inglot", "detected_category": "lip_stain_tint", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "has_ordinal": false, "resolved_query": "What is the longevity of Inglot HD Lip Tint Matte?", "detected_ingredients": null, "reasoning": "Followup about longevity - answer (5-8+ hours) is clearly stated in memory notes. Generated response in beauty expert voice."}}
+
+Query: "Which one was better for office?" (when memory contains comparison with office suitability)
+-> {{"intent": "info_specific", "requires_retrieval": false, "answer_in_memory": true, "memory_answer": "For office wear, Inglot HD Lip Tint Matte wins hands down. Here's why: it lasts 5-8+ hours without budging, is genuinely transfer-resistant (no embarrassing marks on your coffee cup during meetings), and maintains that polished, professional finish all day. Colorbar Starry Flip is gorgeous but only gives you about 3 hours before it needs attention, and it transfers moderately - not ideal when you're presenting to clients or in back-to-back calls. Save the Colorbar for parties where the sparkle factor matters more than longevity.", "requires_web_validation": false, "is_followup": true, "detected_product": null, "detected_brand": null, "detected_category": "lip_stain_tint", "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "has_ordinal": false, "resolved_query": "Which product is better for office wear?", "detected_ingredients": null, "reasoning": "Followup about office suitability - comparison data in memory includes longevity, transfer, and use-case recommendations. Generated comprehensive answer."}}
+
+Query: "Tell me about the 2nd one" (when list has [Maybelline SuperStay, Focallure, Sugar])
+-> {{"intent": "info_specific", "requires_retrieval": true, "requires_web_validation": false, "has_ordinal": true, "detected_product": "Focallure", "detected_category": null, "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "resolved_query": "Tell me about Focallure", "detected_brand": "Focallure", "detected_ingredients": null, "reasoning": "Ordinal reference resolved from current list - 2nd item is Focallure"}}
+
+Query: "What's the weather today?"
+-> {{"intent": "off_topic", "requires_retrieval": false, "requires_web_validation": false, "detected_category": null, "needs_clarification": false, "is_brand_query": false, "is_ingredient_query": false, "is_price_query": false, "is_negative_query": false, "exclude_attributes": null, "is_followup": false, "has_ordinal": false, "resolved_query": "What's the weather today?", "detected_product": null, "detected_brand": null, "detected_ingredients": null, "reasoning": "Not related to beauty or personal care"}}
+
+===============================================================================
+WEB VALIDATION STATUS
+===============================================================================
+
+- Web validation is DISABLED. Set "requires_web_validation": false in outputs.
+- Rely solely on our retrieved_context for recommendations and facts.
+
+Return ONLY valid JSON, no markdown formatting or code blocks.
