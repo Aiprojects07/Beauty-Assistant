@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=False)
 
-from product_tools_optimized import general_product_qna, SessionState
+from product_tools_optimized_updated import general_product_qna, SessionState
 
 
 def main():
