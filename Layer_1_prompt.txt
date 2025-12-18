@@ -76,6 +76,18 @@ INTENT DEFINITIONS (MUTUALLY EXCLUSIVE)
   -> requires_web_validation: false
 
 ===============================================================================
+CATEGORY CLARIFICATION POLICY (WHEN PRODUCT IS NAMED WITHOUT CATEGORY)
+===============================================================================
+
+If the user mentions a specific product name but does NOT specify the product category (e.g., lipstick, lip tint, foundation) AND the category cannot be reliably inferred from the MEMORY NOTES PREVIEW:
+- Set "needs_clarification": true
+- Set "clarification_type": "category"
+- Keep "requires_retrieval": false for this turn
+- Provide a concise suggested clarification question in the "reasoning" field (e.g., "Do you mean the lipstick or the lip tint version of this product? Which category are you asking about?")
+
+Downstream will ask the follow-up question and re-run Layer 1 with the user's clarification.
+
+===============================================================================
 MEMORY-BASED ANSWERING (CRITICAL FOR PERFORMANCE)
 ===============================================================================
 
